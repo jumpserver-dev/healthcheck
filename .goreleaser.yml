@@ -3,7 +3,42 @@ version: 2
 project_name: check
 
 builds:
-  - id: check
+  - id: archives-unix
+    main: .
+    binary: check
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+      - freebsd
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X main.Version={{ .Version }}
+
+  - id: archives-linux-extra
+    main: .
+    binary: check
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+    goarch:
+      - loong64
+      - mips64le
+      - ppc64le
+      - riscv64
+      - s390x
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X main.Version={{ .Version }}
+
+  - id: linux-deb
     main: .
     binary: check
     env:
@@ -19,13 +54,19 @@ builds:
       - -s -w -X main.Version={{ .Version }}
     hooks:
       post:
-        - cmd: objcopy --remove-section .go.buildinfo "{{ .Path }}"
+        - cmd: >-
+            {{- if eq .Arch "arm64" -}}
+            aarch64-linux-gnu-objcopy --remove-section .go.buildinfo "{{ .Path }}"
+            {{- else -}}
+            objcopy --remove-section .go.buildinfo "{{ .Path }}"
+            {{- end -}}
           output: true
 
 archives:
   - id: tarballs
     ids:
-      - check
+      - archives-unix
+      - archives-linux-extra
     formats:
       - tar.gz
     name_template: >-
@@ -37,7 +78,7 @@ archives:
 nfpms:
   - id: linux-packages
     ids:
-      - check
+      - linux-deb
     package_name: check
     formats:
       - deb
