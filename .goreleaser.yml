@@ -17,6 +17,10 @@ builds:
       - -trimpath
     ldflags:
       - -s -w -X main.Version={{ .Version }}
+    hooks:
+      post:
+        - cmd: objcopy --remove-section .go.buildinfo "{{ .Path }}"
+          output: true
 
 archives:
   - id: tarballs
