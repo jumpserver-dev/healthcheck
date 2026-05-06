@@ -29,7 +29,7 @@ sudo dpkg -i check_linux_amd64.deb
 cat Dockerfile
 ```yaml
 # Start by building the application.
-FROM golang:1.18 as build
+FROM golang:1.26 as build
 
 WORKDIR /go/src/app
 COPY . .
