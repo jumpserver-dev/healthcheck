@@ -1,0 +1,52 @@
+version: 2
+
+project_name: check
+
+builds:
+  - id: check
+    main: .
+    binary: check
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X main.Version={{ .Version }}
+
+archives:
+  - id: tarballs
+    ids:
+      - check
+    formats:
+      - tar.gz
+    name_template: >-
+      {{ .ProjectName }}-{{ .Version }}-{{ .Os }}-{{ .Arch }}
+    files:
+      - LICENSE
+      - README.md
+
+nfpms:
+  - id: linux-packages
+    ids:
+      - check
+    package_name: check
+    formats:
+      - deb
+    file_name_template: >-
+      {{ .PackageName }}_linux_{{ .Arch }}
+    bindir: /usr/local/bin
+    maintainer: JumpServer Dev <support@jumpserver.org>
+    description: Health check tool for HTTP(S) and TCP endpoints.
+    license: Apache 2.0
+    homepage: https://github.com/jumpserver-dev/healthcheck
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  disable: true

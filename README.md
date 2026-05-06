@@ -14,6 +14,18 @@ Usage:
    check https://example.com:8443
 ```
 
+Release assets now include both:
+
+- `check-<version>-linux-<arch>.tar.gz`
+- `check_linux_<arch>.deb`
+
+Install with `dpkg`:
+
+```bash
+wget https://github.com/jumpserver-dev/healthcheck/releases/latest/download/check_linux_amd64.deb
+sudo dpkg -i check_linux_amd64.deb
+```
+
 cat Dockerfile
 ```yaml
 # Start by building the application.
