@@ -271,7 +271,7 @@ func pingHost(target string, output io.Writer) error {
 		return err
 	}
 
-	conn, protocol, err := openPingConn(network)
+	conn, protocol, privileged, err := openPingConn(network)
 	if err != nil {
 		return err
 	}
@@ -288,7 +288,8 @@ func pingHost(target string, output io.Writer) error {
 	if err := conn.SetDeadline(start.Add(3 * time.Second)); err != nil {
 		return err
 	}
-	if _, err := conn.WriteTo(wm, ip); err != nil {
+	dst := pingDestinationAddr(ip, privileged)
+	if _, err := conn.WriteTo(wm, dst); err != nil {
 		return err
 	}
 
@@ -327,16 +328,33 @@ func resolvePingTarget(target string) (*net.IPAddr, string, error) {
 	return nil, "", fmt.Errorf("invalid host: %s", target)
 }
 
-func openPingConn(network string) (*icmp.PacketConn, int, error) {
+func openPingConn(network string) (*icmp.PacketConn, int, bool, error) {
 	switch network {
 	case "ip4":
+		if conn, err := icmp.ListenPacket("ip4:icmp", "0.0.0.0"); err == nil {
+			return conn, 1, true, nil
+		}
 		conn, err := icmp.ListenPacket("udp4", "0.0.0.0")
-		return conn, 1, err
+		return conn, 1, false, err
 	case "ip6":
+		if conn, err := icmp.ListenPacket("ip6:ipv6-icmp", "::"); err == nil {
+			return conn, 58, true, nil
+		}
 		conn, err := icmp.ListenPacket("udp6", "::")
-		return conn, 58, err
+		return conn, 58, false, err
 	default:
-		return nil, 0, fmt.Errorf("unsupported network: %s", network)
+		return nil, 0, false, fmt.Errorf("unsupported network: %s", network)
+	}
+}
+
+func pingDestinationAddr(ip *net.IPAddr, privileged bool) net.Addr {
+	if privileged {
+		return ip
+	}
+
+	return &net.UDPAddr{
+		IP:   ip.IP,
+		Zone: ip.Zone,
 	}
 }
 
