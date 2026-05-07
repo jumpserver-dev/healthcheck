@@ -7,11 +7,15 @@ This is a simple example of how to use healthchecks in a Dockerfile using distro
 
 Usage:
    check [url]
+   check curl <url>
+   check wget [-O output] <url>
 
    Example:
    check tcp://example.com:2222
    check http://example.com:8080
    check https://example.com:8443
+   check curl https://example.com/health
+   check wget -O check.deb https://example.com/check.deb
 ```
 
 Release assets now include both:
