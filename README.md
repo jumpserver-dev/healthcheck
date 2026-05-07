@@ -9,6 +9,8 @@ Usage:
    check [url]
    check curl <url>
    check wget [-O output] <url>
+   check ping <host>
+   check ps [pattern]
 
    Example:
    check tcp://example.com:2222
@@ -16,6 +18,8 @@ Usage:
    check https://example.com:8443
    check curl https://example.com/health
    check wget -O check.deb https://example.com/check.deb
+   check ping 127.0.0.1
+   check ps check
 ```
 
 Release assets now include both:
