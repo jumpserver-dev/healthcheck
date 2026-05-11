@@ -3,6 +3,7 @@ package main
 import (
 	"crypto/tls"
 	"encoding/binary"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"net"
@@ -99,6 +100,12 @@ func parseArgs(args []string) command {
 		if len(rest) == 2 {
 			cmd.filter = rest[1]
 		}
+	case "netstat":
+		cmd.name = "netstat"
+		if len(rest) > 2 || (len(rest) == 2 && rest[1] != "-tulnp") {
+			fmt.Println("Usage: check netstat [-tulnp]")
+			os.Exit(1)
+		}
 	default:
 		if len(rest) != 1 {
 			fmt.Println("Multiple targets specified")
@@ -145,6 +152,8 @@ func runCommand(cmd command) error {
 		return pingHost(cmd.target, os.Stdout)
 	case "ps":
 		return listProcesses(cmd.filter, os.Stdout)
+	case "netstat":
+		return listListeningPorts(os.Stdout)
 	default:
 		return checkTarget(cmd.target)
 	}
@@ -412,6 +421,15 @@ type processInfo struct {
 	command string
 }
 
+type listeningPort struct {
+	proto   string
+	address string
+	port    int
+	state   string
+	pid     int
+	command string
+}
+
 func listProcesses(filter string, output io.Writer) error {
 	if runtime.GOOS != "linux" {
 		return fmt.Errorf("ps is only supported on linux")
@@ -488,6 +506,235 @@ func errorsIsInvalidArgument(err error) bool {
 	return err != nil && strings.Contains(err.Error(), "invalid argument")
 }
 
+func listListeningPorts(output io.Writer) error {
+	if runtime.GOOS != "linux" {
+		return fmt.Errorf("netstat is only supported on linux")
+	}
+
+	processesByInode, err := socketProcessesByInode()
+	if err != nil {
+		return err
+	}
+
+	files := []struct {
+		path  string
+		proto string
+		ipv6  bool
+	}{
+		{path: "/proc/net/tcp", proto: "tcp", ipv6: false},
+		{path: "/proc/net/tcp6", proto: "tcp6", ipv6: true},
+		{path: "/proc/net/udp", proto: "udp", ipv6: false},
+		{path: "/proc/net/udp6", proto: "udp6", ipv6: true},
+	}
+
+	ports := make([]listeningPort, 0)
+	for _, file := range files {
+		current, err := readListeningPorts(file.path, file.proto, file.ipv6, processesByInode)
+		if err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			return err
+		}
+		ports = append(ports, current...)
+	}
+
+	sort.Slice(ports, func(i, j int) bool {
+		if ports[i].proto != ports[j].proto {
+			return ports[i].proto < ports[j].proto
+		}
+		if ports[i].port != ports[j].port {
+			return ports[i].port < ports[j].port
+		}
+		return ports[i].address < ports[j].address
+	})
+
+	fmt.Fprintln(output, "Proto Recv-Q Send-Q Local Address           Foreign Address         State       PID/Program name")
+	for _, port := range ports {
+		process := "-"
+		if port.pid > 0 || port.command != "" {
+			process = fmt.Sprintf("%d/%s", port.pid, port.command)
+		}
+		state := port.state
+		if state == "" {
+			state = "-"
+		}
+		fmt.Fprintf(output, "%-5s %-6d %-6d %-23s %-23s %-11s %s\n",
+			port.proto, 0, 0, port.address, "*:*", state, process)
+	}
+
+	return nil
+}
+
+func readListeningPorts(path string, proto string, ipv6 bool, processesByInode map[string]processInfo) ([]listeningPort, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+
+	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+	ports := make([]listeningPort, 0, len(lines))
+	for _, line := range lines[1:] {
+		fields := strings.Fields(line)
+		if len(fields) < 10 {
+			continue
+		}
+
+		state := fields[3]
+		if strings.HasPrefix(proto, "tcp") && state != "0A" {
+			continue
+		}
+
+		address, port, err := parseProcNetAddress(fields[1], ipv6)
+		if err != nil {
+			continue
+		}
+
+		process := processesByInode[fields[9]]
+		ports = append(ports, listeningPort{
+			proto:   proto,
+			address: net.JoinHostPort(address, strconv.Itoa(port)),
+			port:    port,
+			state:   socketStateName(state, proto),
+			pid:     process.pid,
+			command: process.command,
+		})
+	}
+
+	return ports, nil
+}
+
+func socketProcessesByInode() (map[string]processInfo, error) {
+	entries, err := os.ReadDir("/proc")
+	if err != nil {
+		return nil, err
+	}
+
+	processesByInode := make(map[string]processInfo)
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		pid, err := strconv.Atoi(entry.Name())
+		if err != nil {
+			continue
+		}
+
+		fdPath := filepath.Join("/proc", entry.Name(), "fd")
+		fds, err := os.ReadDir(fdPath)
+		if err != nil {
+			if isIgnorableProcError(err) {
+				continue
+			}
+			return nil, err
+		}
+
+		var command string
+		for _, fd := range fds {
+			target, err := os.Readlink(filepath.Join(fdPath, fd.Name()))
+			if err != nil {
+				if isIgnorableProcError(err) {
+					continue
+				}
+				return nil, err
+			}
+			inode, ok := parseSocketInode(target)
+			if !ok {
+				continue
+			}
+			if command == "" {
+				command, err = readProcessName(entry.Name())
+				if err != nil {
+					if isIgnorableProcError(err) {
+						command = "-"
+					} else {
+						return nil, err
+					}
+				}
+			}
+			processesByInode[inode] = processInfo{pid: pid, command: command}
+		}
+	}
+
+	return processesByInode, nil
+}
+
+func parseSocketInode(target string) (string, bool) {
+	if !strings.HasPrefix(target, "socket:[") || !strings.HasSuffix(target, "]") {
+		return "", false
+	}
+	return strings.TrimSuffix(strings.TrimPrefix(target, "socket:["), "]"), true
+}
+
+func readProcessName(pid string) (string, error) {
+	data, err := os.ReadFile(filepath.Join("/proc", pid, "comm"))
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(data)), nil
+}
+
+func parseProcNetAddress(value string, ipv6 bool) (string, int, error) {
+	parts := strings.Split(value, ":")
+	if len(parts) != 2 {
+		return "", 0, fmt.Errorf("invalid address: %s", value)
+	}
+
+	port64, err := strconv.ParseUint(parts[1], 16, 16)
+	if err != nil {
+		return "", 0, err
+	}
+
+	if ipv6 {
+		ip, err := parseProcNetIPv6(parts[0])
+		if err != nil {
+			return "", 0, err
+		}
+		return ip.String(), int(port64), nil
+	}
+
+	ip, err := parseProcNetIPv4(parts[0])
+	if err != nil {
+		return "", 0, err
+	}
+	return ip.String(), int(port64), nil
+}
+
+func parseProcNetIPv4(value string) (net.IP, error) {
+	raw, err := strconv.ParseUint(value, 16, 32)
+	if err != nil {
+		return nil, err
+	}
+	return net.IPv4(byte(raw), byte(raw>>8), byte(raw>>16), byte(raw>>24)), nil
+}
+
+func parseProcNetIPv6(value string) (net.IP, error) {
+	if len(value) != 32 {
+		return nil, fmt.Errorf("invalid ipv6 address: %s", value)
+	}
+	raw, err := hex.DecodeString(value)
+	if err != nil {
+		return nil, err
+	}
+	for i := 0; i < len(raw); i += 4 {
+		raw[i], raw[i+3] = raw[i+3], raw[i]
+		raw[i+1], raw[i+2] = raw[i+2], raw[i+1]
+	}
+	return net.IP(raw), nil
+}
+
+func socketStateName(state string, proto string) string {
+	if strings.HasPrefix(proto, "udp") {
+		return ""
+	}
+	switch state {
+	case "0A":
+		return "LISTEN"
+	default:
+		return state
+	}
+}
+
 func displayHelp() {
 	fmt.Println(`Usage:
    check [url]
@@ -495,6 +742,7 @@ func displayHelp() {
    check wget [-O output] <url>
    check ping <host>
    check ps [pattern]
+   check netstat [-tulnp]
 
    Example:
    check tcp://example.com:2222
@@ -504,6 +752,7 @@ func displayHelp() {
    check wget -O check.deb https://example.com/check.deb
    check ping 127.0.0.1
    check ps check
+   check netstat -tulnp
 
 Version:
    ` + Version + `
@@ -522,5 +771,6 @@ Commands:
    wget <url>     download a URL to a file
    wget -O <file> download a URL to the specified file
    ping <host>    send one ICMP echo request
-   ps [pattern]   list linux processes, optionally filtered by keyword`)
+   ps [pattern]   list linux processes, optionally filtered by keyword
+   netstat        list linux TCP/UDP listening ports and owning processes`)
 }

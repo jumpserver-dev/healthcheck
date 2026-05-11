@@ -11,6 +11,7 @@ Usage:
    check wget [-O output] <url>
    check ping <host>
    check ps [pattern]
+   check netstat [-tulnp]
 
    Example:
    check tcp://example.com:2222
@@ -20,6 +21,7 @@ Usage:
    check wget -O check.deb https://example.com/check.deb
    check ping 127.0.0.1
    check ps check
+   check netstat -tulnp
 ```
 
 Release assets now include both:
