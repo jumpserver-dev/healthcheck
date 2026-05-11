@@ -106,6 +106,13 @@ func parseArgs(args []string) command {
 			fmt.Println("Usage: check netstat [-tulnp]")
 			os.Exit(1)
 		}
+	case "edit", "vi", "vim":
+		cmd.name = "edit"
+		if len(rest) != 2 {
+			fmt.Println("Usage: check edit|vi|vim <file>")
+			os.Exit(1)
+		}
+		cmd.target = rest[1]
 	default:
 		if len(rest) != 1 {
 			fmt.Println("Multiple targets specified")
@@ -154,6 +161,8 @@ func runCommand(cmd command) error {
 		return listProcesses(cmd.filter, os.Stdout)
 	case "netstat":
 		return listListeningPorts(os.Stdout)
+	case "edit":
+		return editFile(cmd.target)
 	default:
 		return checkTarget(cmd.target)
 	}
@@ -743,6 +752,9 @@ func displayHelp() {
    check ping <host>
    check ps [pattern]
    check netstat [-tulnp]
+   check edit <file>
+   check vi <file>
+   check vim <file>
 
    Example:
    check tcp://example.com:2222
@@ -753,6 +765,8 @@ func displayHelp() {
    check ping 127.0.0.1
    check ps check
    check netstat -tulnp
+   check edit /etc/hosts
+   check vi /etc/hosts
 
 Version:
    ` + Version + `
@@ -772,5 +786,8 @@ Commands:
    wget -O <file> download a URL to the specified file
    ping <host>    send one ICMP echo request
    ps [pattern]   list linux processes, optionally filtered by keyword
-   netstat        list linux TCP/UDP listening ports and owning processes`)
+   netstat        list linux TCP/UDP listening ports and owning processes
+   edit <file>    edit a text file interactively
+   vi <file>      edit a text file interactively
+   vim <file>     edit a text file interactively`)
 }

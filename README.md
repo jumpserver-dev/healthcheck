@@ -12,6 +12,9 @@ Usage:
    check ping <host>
    check ps [pattern]
    check netstat [-tulnp]
+   check edit <file>
+   check vi <file>
+   check vim <file>
 
    Example:
    check tcp://example.com:2222
@@ -22,6 +25,8 @@ Usage:
    check ping 127.0.0.1
    check ps check
    check netstat -tulnp
+   check edit /etc/hosts
+   check vi /etc/hosts
 ```
 
 Release assets now include both:
