@@ -6,6 +6,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 
 	"golang.org/x/term"
@@ -266,44 +267,82 @@ func (e *textEditor) readKey() (string, error) {
 	if err != nil {
 		return "\x1b", nil
 	}
+	if next == 'O' {
+		code, _, err := e.reader.ReadRune()
+		if err != nil {
+			return "\x1b", nil
+		}
+		switch code {
+		case 'A':
+			return keyArrowUp, nil
+		case 'B':
+			return keyArrowDown, nil
+		case 'C':
+			return keyArrowRight, nil
+		case 'D':
+			return keyArrowLeft, nil
+		case 'H':
+			return keyHome, nil
+		case 'F':
+			return keyEnd, nil
+		default:
+			return "\x1b", nil
+		}
+	}
 	if next != '[' {
+		if err := e.reader.UnreadRune(); err != nil {
+			return "", err
+		}
 		return "\x1b", nil
 	}
 
-	code, _, err := e.reader.ReadRune()
-	if err != nil {
-		return "\x1b", nil
-	}
-	switch code {
-	case 'A':
-		return keyArrowUp, nil
-	case 'B':
-		return keyArrowDown, nil
-	case 'C':
-		return keyArrowRight, nil
-	case 'D':
-		return keyArrowLeft, nil
-	case 'H':
-		return keyHome, nil
-	case 'F':
-		return keyEnd, nil
-	case '1', '3', '4', '5', '6', '7', '8':
-		if tilde, _, err := e.reader.ReadRune(); err == nil && tilde == '~' {
-			switch code {
-			case '1', '7':
-				return keyHome, nil
-			case '3':
-				return keyDelete, nil
-			case '4', '8':
-				return keyEnd, nil
-			case '5':
-				return keyPageUp, nil
-			case '6':
-				return keyPageDown, nil
-			}
+	var sequence []rune
+	for {
+		code, _, err := e.reader.ReadRune()
+		if err != nil {
+			return "\x1b", nil
+		}
+		sequence = append(sequence, code)
+		if code == '~' || unicode.IsLetter(code) {
+			break
 		}
 	}
-	return "\x1b", nil
+	return parseCSISequence(sequence), nil
+}
+
+func parseCSISequence(sequence []rune) string {
+	if len(sequence) == 0 {
+		return "\x1b"
+	}
+
+	switch sequence[len(sequence)-1] {
+	case 'A':
+		return keyArrowUp
+	case 'B':
+		return keyArrowDown
+	case 'C':
+		return keyArrowRight
+	case 'D':
+		return keyArrowLeft
+	case 'H':
+		return keyHome
+	case 'F':
+		return keyEnd
+	case '~':
+		switch string(sequence[:len(sequence)-1]) {
+		case "1", "7":
+			return keyHome
+		case "3":
+			return keyDelete
+		case "4", "8":
+			return keyEnd
+		case "5":
+			return keyPageUp
+		case "6":
+			return keyPageDown
+		}
+	}
+	return "\x1b"
 }
 
 func (e *textEditor) insertRune(r rune) {
