@@ -1,6 +1,10 @@
 package main
 
-import "testing"
+import (
+	"bufio"
+	"strings"
+	"testing"
+)
 
 func TestParseArgsCheck(t *testing.T) {
 	cmd := parseArgs([]string{"check", "https://example.com/health"})
@@ -82,7 +86,7 @@ func TestParseArgsEdit(t *testing.T) {
 func TestParseArgsVi(t *testing.T) {
 	cmd := parseArgs([]string{"check", "vi", "/tmp/example.conf"})
 
-	if cmd.name != "edit" {
+	if cmd.name != "vim" {
 		t.Fatalf("unexpected command: %s", cmd.name)
 	}
 	if cmd.target != "/tmp/example.conf" {
@@ -93,7 +97,7 @@ func TestParseArgsVi(t *testing.T) {
 func TestParseArgsVim(t *testing.T) {
 	cmd := parseArgs([]string{"check", "vim", "/tmp/example.conf"})
 
-	if cmd.name != "edit" {
+	if cmd.name != "vim" {
 		t.Fatalf("unexpected command: %s", cmd.name)
 	}
 	if cmd.target != "/tmp/example.conf" {
@@ -137,5 +141,49 @@ func TestParseProcNetIPv6Address(t *testing.T) {
 	}
 	if port != 443 {
 		t.Fatalf("unexpected port: %d", port)
+	}
+}
+
+func TestReadKeyParsesSS3Arrows(t *testing.T) {
+	editor := &textEditor{reader: bufio.NewReader(strings.NewReader("\x1bOB"))}
+
+	key, err := editor.readKey()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if key != keyArrowDown {
+		t.Fatalf("unexpected key: %q", key)
+	}
+}
+
+func TestReadKeyParsesCSIWithModifiers(t *testing.T) {
+	editor := &textEditor{reader: bufio.NewReader(strings.NewReader("\x1b[1;2B"))}
+
+	key, err := editor.readKey()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if key != keyArrowDown {
+		t.Fatalf("unexpected key: %q", key)
+	}
+}
+
+func TestReadKeyLeavesFollowingRuneAfterEscape(t *testing.T) {
+	editor := &textEditor{reader: bufio.NewReader(strings.NewReader("\x1bx"))}
+
+	key, err := editor.readKey()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if key != "\x1b" {
+		t.Fatalf("unexpected key: %q", key)
+	}
+
+	key, err = editor.readKey()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if key != "x" {
+		t.Fatalf("unexpected key: %q", key)
 	}
 }

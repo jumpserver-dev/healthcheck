@@ -42,6 +42,7 @@ sudo dpkg -i check_linux_amd64.deb
 ```
 
 cat Dockerfile
+
 ```yaml
 # Start by building the application.
 FROM golang:1.26 as build
@@ -62,6 +63,7 @@ CMD ["/app"]
 ```
 
 cat docker-compose.yml
+
 ```yaml
 version: "3.9"
 services:

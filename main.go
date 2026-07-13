@@ -106,10 +106,17 @@ func parseArgs(args []string) command {
 			fmt.Println("Usage: check netstat [-tulnp]")
 			os.Exit(1)
 		}
-	case "edit", "vi", "vim":
+	case "edit":
 		cmd.name = "edit"
 		if len(rest) != 2 {
-			fmt.Println("Usage: check edit|vi|vim <file>")
+			fmt.Println("Usage: check edit <file>")
+			os.Exit(1)
+		}
+		cmd.target = rest[1]
+	case "vi", "vim":
+		cmd.name = "vim"
+		if len(rest) != 2 {
+			fmt.Println("Usage: check vi|vim <file>")
 			os.Exit(1)
 		}
 		cmd.target = rest[1]
@@ -163,6 +170,8 @@ func runCommand(cmd command) error {
 		return listListeningPorts(os.Stdout)
 	case "edit":
 		return editFile(cmd.target)
+	case "vim":
+		return vimEditFile(cmd.target)
 	default:
 		return checkTarget(cmd.target)
 	}
